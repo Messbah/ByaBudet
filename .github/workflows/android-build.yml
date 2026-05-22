@@ -33,7 +33,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17' # Android requires Java 17 for newer Gradle versions
+          java-version: '21' # Capacitor 7 requires Java 21
 
       - name: Make gradlew executable
         run: chmod +x ./android/gradlew
