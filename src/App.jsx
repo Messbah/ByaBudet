@@ -230,6 +230,31 @@ const RequestCard = ({ req, user, onAccept, onChat, onDeliver, onReport, hasUnre
   );
 };
 
+const MessageThreadCard = ({ req, user, lastMsg, hasUnread, onClick }) => {
+  const isMyRequest = req.requesterId === user?.uid;
+  const otherName = isMyRequest ? req.driverName || 'Someone' : req.requesterName;
+  
+  return (
+    <div onClick={() => onClick(req.id)} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-3 hover:shadow-md transition-all duration-200 cursor-pointer flex items-center gap-4 relative overflow-hidden">
+      <div className="w-12 h-12 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0 border border-teal-100">
+        <User size={24} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex justify-between items-center mb-1">
+          <h4 className="font-bold text-slate-800 truncate pr-2">{otherName}</h4>
+        </div>
+        <p className="text-xs font-semibold text-teal-600 mb-0.5 truncate">Re: {req.title}</p>
+        <p className={`text-sm truncate ${hasUnread ? 'font-bold text-slate-800' : 'text-slate-500'}`}>
+          {lastMsg ? (lastMsg.senderId === user?.uid ? `You: ${lastMsg.text}` : lastMsg.text) : 'No messages yet.'}
+        </p>
+      </div>
+      {hasUnread && (
+        <div className="w-3 h-3 bg-red-500 rounded-full flex-shrink-0 shadow-sm"></div>
+      )}
+    </div>
+  );
+};
+
 const ChatView = ({ req, chatMessages, user, onBack, onSend }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef(null);
@@ -597,7 +622,7 @@ const AuthAndProfileFlow = ({ onSave, user }) => {
 
         {(mode === 'login' || mode === 'signup') && (
           <div className="animate-in fade-in slide-in-from-bottom-4 pt-4">
-            <div className="w-20 h-20 flex items-center justify-center mb-2 mx-auto">
+            <div className="w-64 h-64 flex items-center justify-center mb-2 mx-auto">
               <img src="/logo.png" alt="ByaBudet Logo" className="w-full h-full object-contain drop-shadow-sm" />
             </div>
             <p className="text-sm font-semibold text-teal-600 text-center mb-6 tracking-wide">
@@ -1041,6 +1066,12 @@ export default function App() {
     activeList = myRequestsList;
   } else if (activeTab === 'my_tasks') {
     activeList = myDeliveriesList;
+  } else if (activeTab === 'messages') {
+    activeList = [...myRequestsList, ...myDeliveriesList].sort((a, b) => {
+      const aTime = messages[a.id]?.[messages[a.id].length - 1]?.timestamp?.seconds || 0;
+      const bTime = messages[b.id]?.[messages[b.id].length - 1]?.timestamp?.seconds || 0;
+      return bTime - aTime;
+    });
   }
 
   return (
@@ -1086,18 +1117,20 @@ export default function App() {
         </header>
 
         {!activeChatId && activeTab !== 'profile' && (
-          <div className="bg-white px-4 pt-4 border-b border-slate-200 shadow-sm z-30">
-            <div className="flex gap-4">
+          <div className="bg-white px-4 pt-4 border-b border-slate-200 shadow-sm z-30 overflow-x-auto hide-scrollbar">
+            <div className="flex gap-5 min-w-max">
               <button onClick={() => {setActiveTab('feed'); setShowNewRequestForm(false);}} className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'feed' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
                 Dashboard
               </button>
-              <button onClick={() => {setActiveTab('my_requests'); setShowNewRequestForm(false);}} className={`relative pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'my_requests' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+              <button onClick={() => {setActiveTab('my_requests'); setShowNewRequestForm(false);}} className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'my_requests' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
                 My Requests
-                {myRequestsList.some(r => hasUnreadMsg(r.id)) && <span className="absolute top-0 -right-2 h-2 w-2 rounded-full bg-red-500"></span>}
               </button>
-              <button onClick={() => {setActiveTab('my_tasks'); setShowNewRequestForm(false);}} className={`relative pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'my_tasks' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+              <button onClick={() => {setActiveTab('my_tasks'); setShowNewRequestForm(false);}} className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'my_tasks' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
                 Deliveries
-                {myDeliveriesList.some(r => hasUnreadMsg(r.id)) && <span className="absolute top-0 -right-2 h-2 w-2 rounded-full bg-red-500"></span>}
+              </button>
+              <button onClick={() => {setActiveTab('messages'); setShowNewRequestForm(false);}} className={`relative pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'messages' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                Messages
+                {([...myRequestsList, ...myDeliveriesList].some(r => hasUnreadMsg(r.id))) && <span className="absolute top-0 -right-2 h-2 w-2 rounded-full bg-red-500"></span>}
               </button>
             </div>
           </div>
@@ -1177,12 +1210,14 @@ export default function App() {
                   <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
                     {activeTab === 'feed' ? <Route size={24} className="text-teal-300" /> : 
                      activeTab === 'my_requests' ? <Package size={24} className="text-teal-300" /> : 
+                     activeTab === 'messages' ? <MessageCircle size={24} className="text-teal-300" /> :
                      <Car size={24} className="text-teal-300" />}
                   </div>
                   <p className="font-medium text-slate-600 mb-1">
                     {activeTab === 'feed' && viewMode === 'route' ? 'Nothing on your route.' : 
                      activeTab === 'feed' && viewMode === 'all' ? 'No active requests in this category.' :
                      activeTab === 'my_requests' ? 'No active requests.' : 
+                     activeTab === 'messages' ? 'No messages yet.' :
                      "You haven't accepted any tasks."}
                   </p>
                   <p className="text-sm">
@@ -1192,16 +1227,27 @@ export default function App() {
               )}
 
               {activeList.map(req => (
-                <RequestCard 
-                  key={req.id} 
-                  req={req} 
-                  user={user}
-                  onAccept={handleAcceptRequest}
-                  onChat={openChat}
-                  onDeliver={handleMarkDelivered}
-                  onReport={handleReportRequest}
-                  hasUnread={hasUnreadMsg(req.id)}
-                />
+                activeTab === 'messages' ? (
+                  <MessageThreadCard 
+                    key={req.id}
+                    req={req}
+                    user={user}
+                    lastMsg={messages[req.id]?.[messages[req.id].length - 1]}
+                    hasUnread={hasUnreadMsg(req.id)}
+                    onClick={openChat}
+                  />
+                ) : (
+                  <RequestCard 
+                    key={req.id} 
+                    req={req} 
+                    user={user}
+                    onAccept={handleAcceptRequest}
+                    onChat={openChat}
+                    onDeliver={handleMarkDelivered}
+                    onReport={handleReportRequest}
+                    hasUnread={hasUnreadMsg(req.id)}
+                  />
+                )
               ))}
             </div>
           )}
