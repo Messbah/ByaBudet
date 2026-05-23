@@ -742,7 +742,7 @@ const AuthAndProfileFlow = ({ onSave, user }) => {
                   <div onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-teal-600 text-white p-1.5 rounded-full border-2 border-white cursor-pointer hover:bg-teal-700">
                     <Camera size={14} />
                   </div>
-                  <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
+                  <input type="file" accept="image/*" capture="user" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
                 </div>
               </div>
 
