@@ -4,7 +4,7 @@ import {
   PlusCircle, ArrowRight, HeartHandshake, MessageCircle, 
   Send, ArrowLeft, Info, Home, ShieldCheck, Loader2,
   ShoppingCart, Utensils, Pill, Hammer, MoreHorizontal,
-  Route, Filter, Camera, LogOut, Phone, Bell, Flag, Trash2, AlertTriangle, X
+  Route, Filter, Camera as CameraIcon, LogOut, Phone, Bell, Flag, Trash2, AlertTriangle, X
 } from 'lucide-react';
 
 // Firebase Imports
@@ -18,6 +18,10 @@ import {
   getFirestore, doc, setDoc, updateDoc, onSnapshot, 
   collection, addDoc, deleteDoc
 } from 'firebase/firestore';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { defineCustomElements } from '@ionic/pwa-elements/loader';
+
+defineCustomElements(window);
 
 const firebaseConfig = {
   apiKey: "AIzaSyDP1eeFMzdwO15AeyXMucpvbo6KNjdzGfA",
@@ -42,6 +46,19 @@ const CATEGORIES = [
   { id: 'Tools', label: 'Tools/Hardware', icon: Hammer },
   { id: 'Other', label: 'Other Needs', icon: MoreHorizontal }
 ];
+
+const ImageLightbox = ({ imageUrl, onClose }) => {
+  if (!imageUrl) return null;
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-4 animate-in fade-in" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-6 right-6 text-white p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+        <X size={24} />
+      </button>
+      <img src={imageUrl} alt="Verification" className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <p className="text-white/60 text-sm mt-4 font-medium flex items-center gap-1"><ShieldCheck size={16}/> Verified User Photo</p>
+    </div>
+  );
+};
 
 const RequestForm = ({ onSubmit, onCancel, userHome }) => {
   const [title, setTitle] = useState('');
@@ -115,7 +132,7 @@ const RequestForm = ({ onSubmit, onCancel, userHome }) => {
   );
 };
 
-const RequestCard = ({ req, user, onAccept, onChat, onDeliver, onReport, hasUnread }) => {
+const RequestCard = ({ req, user, onAccept, onChat, onDeliver, onReport, hasUnread, onPhotoClick }) => {
   const isMyRequest = req.requesterId === user?.uid;
   const isMyTask = req.driverId === user?.uid;
   const catData = CATEGORIES.find(c => c.id === req.category) || CATEGORIES[CATEGORIES.length - 1];
@@ -125,7 +142,15 @@ const RequestCard = ({ req, user, onAccept, onChat, onDeliver, onReport, hasUnre
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-4 hover:shadow-md transition-all duration-200 relative overflow-hidden">
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex flex-shrink-0 items-center justify-center overflow-hidden">
+          <div 
+            className={`w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex flex-shrink-0 items-center justify-center overflow-hidden ${req.requesterPhoto ? 'cursor-pointer hover:opacity-80 ring-2 ring-transparent hover:ring-teal-200 transition-all' : ''}`}
+            onClick={(e) => {
+              if (req.requesterPhoto && onPhotoClick) {
+                e.stopPropagation();
+                onPhotoClick(req.requesterPhoto);
+              }
+            }}
+          >
             {req.requesterPhoto ? (
               <img src={req.requesterPhoto} alt={req.requesterName} className="w-full h-full object-cover" />
             ) : (
@@ -230,14 +255,27 @@ const RequestCard = ({ req, user, onAccept, onChat, onDeliver, onReport, hasUnre
   );
 };
 
-const MessageThreadCard = ({ req, user, lastMsg, hasUnread, onClick }) => {
+const MessageThreadCard = ({ req, user, lastMsg, hasUnread, onClick, onPhotoClick }) => {
   const isMyRequest = req.requesterId === user?.uid;
   const otherName = isMyRequest ? req.driverName || 'Someone' : req.requesterName;
+  const otherPhoto = isMyRequest ? req.driverPhoto : req.requesterPhoto;
   
   return (
     <div onClick={() => onClick(req.id)} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-3 hover:shadow-md transition-all duration-200 cursor-pointer flex items-center gap-4 relative overflow-hidden">
-      <div className="w-12 h-12 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0 border border-teal-100">
-        <User size={24} />
+      <div 
+        className={`w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex flex-shrink-0 items-center justify-center overflow-hidden ${otherPhoto ? 'cursor-pointer hover:opacity-80 ring-2 ring-transparent hover:ring-teal-200 transition-all' : 'text-teal-600 bg-teal-50 border-teal-100'}`}
+        onClick={(e) => {
+          if (otherPhoto && onPhotoClick) {
+            e.stopPropagation();
+            onPhotoClick(otherPhoto);
+          }
+        }}
+      >
+        {otherPhoto ? (
+          <img src={otherPhoto} alt={otherName} className="w-full h-full object-cover" />
+        ) : (
+          <User size={24} />
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-center mb-1">
@@ -339,38 +377,22 @@ const ProfileView = ({ userData, onSave, onCancel, onDeleteAccount }) => {
   const [photoUrl, setPhotoUrl] = useState(userData?.photoUrl || '');
   const fileInputRef = useRef(null);
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        // Create an in-memory canvas to resize the image
-        const canvas = document.createElement('canvas');
-        const MAX_SIZE = 256;
-        let { width, height } = img;
-        
-        // Scale down keeping aspect ratio
-        if (width > height && width > MAX_SIZE) {
-          height *= MAX_SIZE / width;
-          width = MAX_SIZE;
-        } else if (height > MAX_SIZE) {
-          width *= MAX_SIZE / height;
-          height = MAX_SIZE;
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        // Convert to a compressed data URL that fits in Firestore limits safely
-        setPhotoUrl(canvas.toDataURL('image/jpeg', 0.8));
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
+  const handleImageUpload = async () => {
+    try {
+      const image = await Camera.getPhoto({
+        quality: 80,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        width: 256,
+        height: 256,
+      });
+      if (image && image.dataUrl) {
+        setPhotoUrl(image.dataUrl);
+      }
+    } catch (e) {
+      console.log('User cancelled or camera failed', e);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -387,10 +409,9 @@ const ProfileView = ({ userData, onSave, onCancel, onDeleteAccount }) => {
             <div className="w-20 h-20 bg-slate-100 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden">
               {photoUrl ? <img src={photoUrl} alt="Preview" className="w-full h-full object-cover" /> : <User size={32} className="text-slate-400" />}
             </div>
-            <div onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-teal-600 text-white p-1.5 rounded-full border-2 border-white cursor-pointer hover:bg-teal-700">
-              <Camera size={14} />
+            <div onClick={handleImageUpload} className="absolute bottom-0 right-0 bg-teal-600 text-white p-1.5 rounded-full border-2 border-white cursor-pointer hover:bg-teal-700">
+              <CameraIcon size={14} />
             </div>
-            <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
           </div>
         </div>
         
@@ -463,34 +484,22 @@ const AuthAndProfileFlow = ({ onSave, user }) => {
   const [photoUrl, setPhotoUrl] = useState('');
   const fileInputRef = useRef(null);
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_SIZE = 256;
-        let { width, height } = img;
-        
-        if (width > height && width > MAX_SIZE) {
-          height *= MAX_SIZE / width;
-          width = MAX_SIZE;
-        } else if (height > MAX_SIZE) {
-          width *= MAX_SIZE / height;
-          height = MAX_SIZE;
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        setPhotoUrl(canvas.toDataURL('image/jpeg', 0.8));
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
+  const handleImageUpload = async () => {
+    try {
+      const image = await Camera.getPhoto({
+        quality: 80,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        width: 256,
+        height: 256,
+      });
+      if (image && image.dataUrl) {
+        setPhotoUrl(image.dataUrl);
+      }
+    } catch (e) {
+      console.log('User cancelled or camera failed', e);
+    }
   };
 
   useEffect(() => {
@@ -739,10 +748,9 @@ const AuthAndProfileFlow = ({ onSave, user }) => {
                   <div className="w-20 h-20 bg-slate-100 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden">
                     {photoUrl ? <img src={photoUrl} alt="Preview" className="w-full h-full object-cover" /> : <User size={32} className="text-slate-400" />}
                   </div>
-                  <div onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-teal-600 text-white p-1.5 rounded-full border-2 border-white cursor-pointer hover:bg-teal-700">
-                    <Camera size={14} />
+                  <div onClick={handleImageUpload} className="absolute bottom-0 right-0 bg-teal-600 text-white p-1.5 rounded-full border-2 border-white cursor-pointer hover:bg-teal-700">
+                    <CameraIcon size={14} />
                   </div>
-                  <input type="file" accept="image/*" capture="user" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
                 </div>
               </div>
 
@@ -790,6 +798,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('feed');
   const [activeChatId, setActiveChatId] = useState(null);
   const [showNewRequestForm, setShowNewRequestForm] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState(null);
   
   const [viewMode, setViewMode] = useState('route'); 
   const [activeCategory, setActiveCategory] = useState('All');
@@ -1235,6 +1244,7 @@ export default function App() {
                     lastMsg={messages[req.id]?.[messages[req.id].length - 1]}
                     hasUnread={hasUnreadMsg(req.id)}
                     onClick={openChat}
+                    onPhotoClick={setLightboxImage}
                   />
                 ) : (
                   <RequestCard 
@@ -1246,13 +1256,32 @@ export default function App() {
                     onDeliver={handleMarkDelivered}
                     onReport={handleReportRequest}
                     hasUnread={hasUnreadMsg(req.id)}
+                    onPhotoClick={setLightboxImage}
                   />
                 )
               ))}
+
+              {/* Impact Counter */}
+              {activeTab === 'feed' && !showNewRequestForm && (
+                <div className="mt-8 mb-6 flex justify-center animate-in fade-in">
+                  <div className="bg-teal-50 px-5 py-3 rounded-2xl border border-teal-100 flex items-center gap-3 shadow-sm">
+                    <div className="bg-teal-100 text-teal-600 p-2 rounded-full">
+                      <HeartHandshake size={20} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-teal-600 uppercase tracking-wider mb-0.5">Community Impact</p>
+                      <p className="text-sm font-bold text-slate-700">
+                        <span className="text-teal-700">{requests.filter(r => r.status === 'delivered').length}</span> neighbors helped so far!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </main>
       </div>
+      <ImageLightbox imageUrl={lightboxImage} onClose={() => setLightboxImage(null)} />
     </div>
   );
 }
